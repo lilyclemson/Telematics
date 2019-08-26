@@ -11,8 +11,9 @@ END;
 deviceTripFile :=  PROJECT(B_Data_Ingestion.raw, TRANSFORM(Layout_tripDevice, SELF := LEFT));
 deviceTripFileTable := TABLE(deviceTripFile);
 SortedDeviceTripFileTable := SORT(deviceTripFileTable,deviceID,tripID);
+SortedDeviceTripFileTable;
 uniqueDeviceTrip := TABLE(SortedDeviceTripFileTable,{deviceID,tripID,Cnt:= COUNT(GROUP)},deviceID,tripID);
-
+//uniqueDeviceTrip;
 //uniqueDeviceCountTime;
 uniqueDeviceCountTime := TABLE(SortedDeviceTripFileTable,{deviceID,Cnt:= COUNT(GROUP)},deviceID);
 

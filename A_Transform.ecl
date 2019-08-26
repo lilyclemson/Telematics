@@ -20,11 +20,12 @@ Layout := RECORD
   DECIMAL10_8 tPos;
 END;
 file := DATASET('~levin::vehicle_telematics::v2_1.csv', Layout, CSV(HEADING(1),separator(',')));
-//file := DATASET('~levin::vehicle_telematics::vehicle_telematics.csv', Layout, CSV(HEADING(1),separator(',')));
 //file := DATASET('~levin::vehicle_telematics::testv2.csv', Layout, CSV(HEADING(1),separator(',')));
+//file := DATASET('~levin::testv2_13000.csv', Layout, CSV(HEADING(1),separator(',')));
+//file := DATASET('~levin::testv2_100000.csv', Layout, CSV(HEADING(1),separator(',')));
+//file := DATASET('~levin::testv2_300000.csv', Layout, CSV(HEADING(1),separator(',')));
 //Clean data which tripID and deviceID are zero
 fileFilter1 :=file(tripID != 0 );
-
 SortedFile := SORT(fileFilter1,deviceID);
 OUTPUT(SortedFile,,'~levin::fileFilter.csv',OVERWRITE);
 
