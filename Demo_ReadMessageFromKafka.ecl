@@ -8,8 +8,8 @@ IMPORT STD.Date;
 #option('outputLimit',2000);
 
 consumer := kafka.KafkaConsumer('telematics', brokers := '10.128.0.3');
-//max 300 message
-ds := consumer.GetMessages(300);
+//max 520 message(for 32 GB memory)
+ds := consumer.GetMessages(520);
 OUTPUT(ds);
 
 KafkaMessageFormat  := RECORD
@@ -43,7 +43,7 @@ pointLayout := RECORD
 END;
 //Row data type
 rowRec := RECORD
-   DATASET(pointLayout) Row {xpath('Row')};
+   DATASET(pointLayout) Row{xpath('Row')};
 END;
 //Kafka Message Type
 KafkaMessageFormatAdd  := RECORD
@@ -61,8 +61,51 @@ end;
 kafkaMessageTable := project(ds, kafkaMessageTableMove(left));
 kafkaMessageTable;
 
+MyFormat := RECORD
+  DATASET(pointLayout) Row{xpath('Row')} := kafkaMessageTable.tripJson.Row;
+END;
 
-curTime:=Date.TimestampToString(Date.CurrentTimestamp(),'%Y-%m-%dT%H:%M:%S.%#');
+//Convert KafkaMessageFormatAdd Structure to multiple column Structure
+subKafkaMessageTable :=  (TABLE(kafkaMessageTable,MyFormat)).Row;
+subKafkaMessageTable;
+
+curTimestamp :=Date.CurrentTimestamp(): INDEPENDENT;
+curTime := Date.TimestampToString(curTimestamp,'%Y-%m-%dT%H:%M:%S.%#'): INDEPENDENT;
+//curTime;
+currentName := '~levin::kafkaMessageTable'+curTime+'.csv': INDEPENDENT;
+currentName;
+
+//If Kafka Message has save to a dataset, if there is no super file, create a super file. Then move the previous dataset to the super file
+superFileName := '~levin::kafkaMessageTableSuper';
+
+superFileNameExists := STD.File.SuperFileExists(superFileName);
+superFileNameExists;
+
+//Clean the data
+cleanKafkaMessageTable := subKafkaMessageTable(tripid != 0);
+
+//Count the number of trips
+countKafkaMessageTable:= COUNT(cleanKafkaMessageTable);
+countKafkaMessageTable;
 
 //If Kafka Message is not null, it will save to a dataset 
-if(COUNT(kafkaMessageTable)>0,OUTPUT(kafkaMessageTable,,'~levin::kafkaMessageTable'+curTime+'.csv',OVERWRITE));
+if(countKafkaMessageTable>0,OUTPUT(cleanKafkaMessageTable,,currentName,OVERWRITE));
+
+//Create Super file if Not Exists when Kafka message is not null
+if(countKafkaMessageTable>0 and superFileNameExists = False,STD.File.CreateSuperFile(superFileName));
+
+//Move the previous dataset to the super file
+moveProcess := SEQUENTIAL(
+    STD.File.StartSuperFileTransaction();
+    STD.File.AddSuperFile(superFileName, currentName);
+    STD.File.FinishSuperFileTransaction();
+);
+
+//Move the previous dataset to the super file
+if(countKafkaMessageTable>0,moveProcess);
+
+
+//start_build_process : WHEN ( CRON ( '0-59/0 * * * *' ) ); //SCHEDULE A JOB every 1 minute
+
+
+
