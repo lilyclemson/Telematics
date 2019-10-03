@@ -10,9 +10,9 @@ Layout_tripDevice_acceleration := RECORD
 	DECIMAL7_4 accelerationGps := 0;//acceleration rate
 	DECIMAL7_2 accelerationRpm := 0;
 	DECIMAL7_4 moving_ave_accelerationGps:=0;// Every five acceleration to caculate the average value to make the curve more smoothly 
-	INTEGER2 AccelerationGpsType:=0;//Threadhold.If moving_ave_accelerationGps>1, acceleration,AccelerationGpsType=4; 1> moving_ave_accelerationGps >-1  omit,AccelerationGpsType=0;moving_ave_accelerationGps<-1, brake,AccelerationGpsType=4
-    INTEGER2 accelerationPoint:=0;//The accleration point in each trip 
-    INTEGER2 brakePoint:=0;//The brake point in each trip 
+	INTEGER2 accelerationGpsType:=0;//Threadhold.If moving_ave_accelerationGps>7, acceleration,accelerationGpsType=4; 7> moving_ave_accelerationGps >-7  omit,accelerationGpsType=0;moving_ave_accelerationGps<-1, brake,accelerationGpsType=4
+    INTEGER2 hardAccelerationPoint:=0;//The hard accleration point in each trip 
+    INTEGER2 hardBrakePoint:=0;//The hard brake point in each trip 
 END;
 tripDeviceAccelerationTable := TABLE($.E_Data_Ingestion.raw,Layout_tripDevice_acceleration);
 
@@ -33,7 +33,8 @@ tripDeviceAccelerationTableEnhanceFilter;
 COUNT(tripDeviceAccelerationTableEnhanceFilter);
 
 //Add moving averages of the GPS acceleration
-//Add Acceleration Type(Acceleration, brake, omit) by moving_ave_accelerationGps. Threadhold.If moving_ave_accelerationGps>1, acceleration,AccelerationGpsType=4; 1> moving_ave_accelerationGps >-1  omit,AccelerationGpsType=0;moving_ave_accelerationGps<-1, brake,AccelerationGpsType=4
+//There are a lot of precisely definition in Hard Brake or Hard Acceleration(from 1 to 10). The common value is 7 Mile/Second. For simplying the module, here will use 7 as default.
+//Add Acceleration Type(Acceleration, brake, omit) by moving_ave_accelerationGps. Threadhold.If moving_ave_accelerationGps>7, acceleration,AccelerationGpsType=4; 7> moving_ave_accelerationGps >-7  omit,AccelerationGpsType=0;moving_ave_accelerationGps<-7, brake,AccelerationGpsType=4
 withMovingAve := DENORMALIZE(
                 tripDeviceAccelerationTableEnhance,
                 tripDeviceAccelerationTableEnhance,
@@ -46,7 +47,7 @@ withMovingAve := DENORMALIZE(
                         RECORDOF(LEFT),
                         moving_ave_accelerationGps := IF(COUNT(ROWS(RIGHT)) = 5, AVE(ROWS(RIGHT), accelerationGps), 0);
                         SELF.moving_ave_accelerationGps := moving_ave_accelerationGps;
-                        AccelerationGpsType := IF(moving_ave_accelerationGps>1,4,if(moving_ave_accelerationGps<-1,-4,0));
+                        AccelerationGpsType := IF(moving_ave_accelerationGps>7,4,if(moving_ave_accelerationGps<-7,-4,0));
                         SELF.AccelerationGpsType :=AccelerationGpsType;
                         SELF := LEFT
                     ),
@@ -55,8 +56,8 @@ withMovingAve := DENORMALIZE(
 withMovingAve;
 
 Layout_tripDevice_acceleration withMovingAveTypeAccelerationRecs(Layout_tripDevice_acceleration L, Layout_tripDevice_acceleration R) := TRANSFORM
-  SELF.accelerationPoint := if(L.AccelerationGpsType=0,if(R.AccelerationGpsType=4,1,0),0);// accelerate 
-  SELF.brakePoint := if(L.AccelerationGpsType=0,if(R.AccelerationGpsType=-4,1,0),0);// brake 
+  SELF.hardAccelerationPoint := if(L.AccelerationGpsType=0,if(R.AccelerationGpsType=4,1,0),0);// hard accelerate 
+  SELF.hardBrakePoint := if(L.AccelerationGpsType=0,if(R.AccelerationGpsType=-4,1,0),0);// hard brake 
   SELF := R;
 END;
 
@@ -67,16 +68,16 @@ OUTPUT(withMovingAveTypeAcceleration);
 withMovingAveTypeAccelerationResTypeSum:=RECORD
     withMovingAveTypeAcceleration.deviceID;
     withMovingAveTypeAcceleration.tripID;
-    accelerationTotal:=SUM(GROUP,withMovingAveTypeAcceleration.accelerationPoint);
-    brakeTotal:=SUM(GROUP,withMovingAveTypeAcceleration.brakePoint);
+    totalHardAcceleration:=SUM(GROUP,withMovingAveTypeAcceleration.hardAccelerationPoint);
+    totalHardBrake:=SUM(GROUP,withMovingAveTypeAcceleration.hardBrakePoint);
     maxSpeed:=MAX(GROUP,withMovingAveTypeAcceleration.gps_speed);
     aveSpeed:=(DECIMAL7_4)AVE(GROUP,withMovingAveTypeAcceleration.gps_speed);
     maxAcceleration:=MAX(GROUP,withMovingAveTypeAcceleration.accelerationGps);
     maxBrake:=MIN(GROUP,withMovingAveTypeAcceleration.accelerationGps);
-    totalTime := COUNT(GROUP);
+    totalTime := (DECIMAL7_4)COUNT(GROUP)/60;
     seatBelt := if(RANDOM()%2 !=0,True, False);
 END;
-//Add acceleration Total and brake Total by accelerationPoint and brakePoint
+//Add acceleration Total and brake Total by hard accelerationPoint and hard brakePoint
 //Add Maximum Speed, Average Speed
 //Add Maximum Acceleration,Brake
 //Add Total time and seat belt
@@ -87,18 +88,18 @@ count(withMovingAveTypeAccelerationSummary);
 
 withMovingAveTypeAccelerationResTypeSumDevice:=RECORD
     withMovingAveTypeAccelerationSummary.deviceID;
-    accelerationTotal:=SUM(GROUP,withMovingAveTypeAccelerationSummary.accelerationTotal);
-    brakeTotal:=SUM(GROUP,withMovingAveTypeAccelerationSummary.brakeTotal);
+    totalHardAcceleration:=SUM(GROUP,withMovingAveTypeAccelerationSummary.totalHardAcceleration);
+    totalHardBrake:=SUM(GROUP,withMovingAveTypeAccelerationSummary.totalHardBrake);
     maxSpeed:=MAX(GROUP,withMovingAveTypeAccelerationSummary.maxSpeed);
     aveSpeed:=(DECIMAL7_4)AVE(GROUP,withMovingAveTypeAccelerationSummary.aveSpeed);
     maxAcceleration:=MAX(GROUP,withMovingAveTypeAccelerationSummary.maxAcceleration);
     maxBrake:=MIN(GROUP,withMovingAveTypeAccelerationSummary.maxBrake);
     totalTrip := COUNT(GROUP);
-    totalTime := SUM(GROUP,withMovingAveTypeAccelerationSummary.totalTime);
-    avgAccelerationPerHour:= (DECIMAL7_4) ((DECIMAL7_4)SUM(GROUP,withMovingAveTypeAccelerationSummary.accelerationTotal)/SUM(GROUP,withMovingAveTypeAccelerationSummary.totalTime)) *3600;
-    avgBrakePerHour:= (DECIMAL7_4)((DECIMAL7_4)SUM(GROUP,withMovingAveTypeAccelerationSummary.brakeTotal)/SUM(GROUP,withMovingAveTypeAccelerationSummary.totalTime)) *3600;
+    totalTime := SUM(GROUP,(DECIMAL7_4)(withMovingAveTypeAccelerationSummary.totalTime)/60);
+    avgHardAccelerationPerHour:= (DECIMAL7_4) ((DECIMAL7_4)SUM(GROUP,withMovingAveTypeAccelerationSummary.totalHardAcceleration)/SUM(GROUP,withMovingAveTypeAccelerationSummary.totalTime)) *60;
+    avgHardBrakePerHour:= (DECIMAL7_4)((DECIMAL7_4)SUM(GROUP,withMovingAveTypeAccelerationSummary.totalHardBrake)/SUM(GROUP,withMovingAveTypeAccelerationSummary.totalTime)) *60;
 END;
-//Add acceleration Total and brake Total 
+//Add hard acceleration Total and hard brake Total 
 //Add Maximum Speed, Average Speed
 //Add Maximum Acceleration,Brake
 //Add Total time
@@ -107,12 +108,18 @@ withMovingAveTypeAccelerationSummaryByDevice:= TABLE(withMovingAveTypeAccelerati
 //withMovingAveTypeAccelerationSummaryByDevice;
 
 OUTPUT(withMovingAveTypeAccelerationSummaryByDevice, NAMED('withMovingAveTypeAccelerationSummaryByDevice'));
-withMovingAveTypeAccelerationSummaryByDeviceMappings := DATASET([{'Device ID','deviceID'},{'accelerationTotal','accelerationTotal'},{'brakeTotal','brakeTotal'},{'totalTime','totalTime'}],Visualizer.KeyValueDef);
 
-Visualizer.MultiD.area('withMovingAveTypeAccelerationSummaryByDeviceChart', /*datasource*/, 'withMovingAveTypeAccelerationSummaryByDevice', withMovingAveTypeAccelerationSummaryByDeviceMappings, /*filteredBy*/, /*dermatologyProperties*/ );
+withMovingAveTypeAccelerationSummaryByDeviceMappings := DATASET([{'Device ID','deviceID'},{'totalHardAcceleration','totalHardAcceleration'},{'totalHardBrake','totalHardBrake'}],Visualizer.KeyValueDef);
+Visualizer.MultiD.Column('withMovingAveTypeAccelerationSummaryByDeviceChart', /*datasource*/, 'withMovingAveTypeAccelerationSummaryByDevice', withMovingAveTypeAccelerationSummaryByDeviceMappings, /*filteredBy*/, /*dermatologyProperties*/ );
 
-withMovingAveTypeAccelerationSummaryByDeviceMappings2 := DATASET([{'Device ID','deviceID'},{'maxSpeed','maxSpeed'},{'aveSpeed','aveSpeed'},{'maxAcceleration','maxAcceleration'},{'maxBrake','maxBrake'},{'avgAccelerationPerHour','avgAccelerationPerHour'},{'avgBrakePerHour','avgBrakePerHour'}],Visualizer.KeyValueDef);
-
-//Visualizer.MultiD.area('withMovingAveTypeAccelerationSummaryByDeviceChart2', /*datasource*/, 'withMovingAveTypeAccelerationSummaryByDevice', withMovingAveTypeAccelerationSummaryByDeviceMappings2, /*filteredBy*/, /*dermatologyProperties*/ );
-
+withMovingAveTypeAccelerationSummaryByDeviceMappings2 := DATASET([{'Device ID','deviceID'},{'totalTime','totalTime'}],Visualizer.KeyValueDef);
 Visualizer.MultiD.Column('withMovingAveTypeAccelerationSummaryByDeviceChart2', /*datasource*/, 'withMovingAveTypeAccelerationSummaryByDevice', withMovingAveTypeAccelerationSummaryByDeviceMappings2, /*filteredBy*/, /*dermatologyProperties*/ );
+
+withMovingAveTypeAccelerationSummaryByDeviceMappings3 := DATASET([{'Device ID','deviceID'},{'avgHardAccelerationPerHour','avgHardAccelerationPerHour'}],Visualizer.KeyValueDef);
+Visualizer.MultiD.Column('withMovingAveTypeAccelerationSummaryByDeviceChart3', /*datasource*/, 'withMovingAveTypeAccelerationSummaryByDevice', withMovingAveTypeAccelerationSummaryByDeviceMappings3, /*filteredBy*/, /*dermatologyProperties*/ );
+
+withMovingAveTypeAccelerationSummaryByDeviceMappings4 := DATASET([{'Device ID','deviceID'},{'avgHardBrakePerHour','avgHardBrakePerHour'}],Visualizer.KeyValueDef);
+Visualizer.MultiD.Column('withMovingAveTypeAccelerationSummaryByDeviceChart4', /*datasource*/, 'withMovingAveTypeAccelerationSummaryByDevice', withMovingAveTypeAccelerationSummaryByDeviceMappings4, /*filteredBy*/, /*dermatologyProperties*/ );
+
+// withMovingAveTypeAccelerationSummaryByDeviceMappingsAll := DATASET([{'Device ID','deviceID'},{'maxSpeed','maxSpeed'},{'aveSpeed','aveSpeed'},{'maxAcceleration','maxAcceleration'},{'maxBrake','maxBrake'},{'avgHardAccelerationPerHour','avgHardAccelerationPerHour'},{'avgHardBrakePerHour','avgHardBrakePerHour'}],Visualizer.KeyValueDef);
+// Visualizer.MultiD.Column('withMovingAveTypeAccelerationSummaryByDeviceChartAll', /*datasource*/, 'withMovingAveTypeAccelerationSummaryByDevice', withMovingAveTypeAccelerationSummaryByDeviceMappingsAll, /*filteredBy*/, /*dermatologyProperties*/ );

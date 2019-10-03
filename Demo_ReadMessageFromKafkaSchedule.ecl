@@ -59,6 +59,12 @@ end;
 //Convert source data to KafkaMessageFormatAdd Structure
 kafkaMessageTable := project(ds, kafkaMessageTableMove(left));
 
+MyFormat := RECORD
+  DATASET(pointLayout) Row{xpath('Row')} := kafkaMessageTable.tripJson.Row;
+END;
+
+subKafkaMessageTable :=  (TABLE(kafkaMessageTable,MyFormat)).Row;
+
 curTimestamp :=Date.CurrentTimestamp(): INDEPENDENT;
 curTime := Date.TimestampToString(curTimestamp,'%Y-%m-%dT%H:%M:%S.%#'): INDEPENDENT;
 //curTime;
@@ -70,7 +76,7 @@ superFileName := '~levin::kafkaMessageTableSuper';
 superFileNameExists := STD.File.SuperFileExists(superFileName);
 
 //Clean the data
-cleanKafkaMessageTable := kafkaMessageTable(message != '');
+cleanKafkaMessageTable := subKafkaMessageTable(tripid != 0);
 
 //Count the number of trips
 countKafkaMessageTable:= COUNT(cleanKafkaMessageTable);
