@@ -16,6 +16,7 @@ import argparse, sys
 import traceback
 import Queue as queue
 
+# generate main threads for task assignment and data generation
 def dataGenerate(path, saveDirectory, times, gap, startnumber,tasknumber):
     threads = []
     orderThreading = threading.Thread(target=sendMessage,
@@ -30,7 +31,7 @@ def dataGenerate(path, saveDirectory, times, gap, startnumber,tasknumber):
     for t in threads:
         t.join()
 
-
+#Assign tasks to threads
 def sendMessage(path, saveDirectory, times, gap, startnumber,tasknumber):
     round = int(times/tasknumber)
     m_round = 0
@@ -53,7 +54,7 @@ def sendMessage(path, saveDirectory, times, gap, startnumber,tasknumber):
         elif m_round >= round:
             NotFinish = False
 
-
+#Recieve tasks, generate data and save to json file
 def receivingMessage(threadid, path, saveDirectory, times, gap, numberQueue):
     import CombineData
     while True:
@@ -71,22 +72,22 @@ def receivingMessage(threadid, path, saveDirectory, times, gap, numberQueue):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--startnumber', help='Start number')
+    parser.add_argument('--startnumber', help='Start number')# Start Number
     args = parser.parse_args()
     numberQueue = queue.Queue()
     #print(args.startnumber)
-    path = '/home/ec2-user/telematics/testV2test.csv'
+    path = '/home/ec2-user/telematics/testV2test.csv'# Source file path
     #path = '/home/ec2-user/telematics/testV2_13000.csv'
     #path = '/home/ec2-user/telematics/V2_1.csv'
-    cleanSavePath = '/home/ec2-user/telematics/testV2_clean.csv'
-    times = 10
-    gap = 100
-    tasknumber = 1
+    cleanSavePath = '/home/ec2-user/telematics/testV2_clean.csv'# Clean data path
+    times = 10# Running times
+    gap = 100# Gaps between device ID
+    tasknumber = 1# thread number
     startnumber=int(args.startnumber)
-    saveDirectory = '/mnt/disks/sdb/dataprepare'
+    saveDirectory = '/mnt/disks/sdb/dataprepare'# Save directory
     print('begin:'+str(datetime.datetime.now()))
-    CleanDataAndGenerateFile.CleanDataAndSave(path, cleanSavePath)
-    dataGenerate(cleanSavePath,saveDirectory,times, gap, startnumber,tasknumber)
+    CleanDataAndGenerateFile.CleanDataAndSave(path, cleanSavePath)# Clean the data
+    dataGenerate(cleanSavePath,saveDirectory,times, gap, startnumber,tasknumber)# Generate Data
 
 
 

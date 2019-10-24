@@ -8,6 +8,7 @@ import datetime
 from multiprocessing import Process
 import time
 
+#generate data and save to json file
 def combineDataToJson(threadid, path, savepath, number, gap):
     start = time.clock()
     returnValue = False
@@ -65,7 +66,6 @@ def combineDataToJson(threadid, path, savepath, number, gap):
             #print(tripJson)
             df_combined = df_combined.append(pd.Series(tripJson, index=df_combined.columns), ignore_index=True)
 
-
         #print(df_combined)
         #df_combined.to_csv(savepath, index = None, header=True)
         print(savepath)
@@ -77,8 +77,8 @@ def combineDataToJson(threadid, path, savepath, number, gap):
     except Exception as ex:
         print(ex)
     return returnValue
+
 if __name__ == "__main__":
     path = '/home/ec2-user/telematics/testV2_enhance.csv'
     savepath = '/home/ec2-user/telematics/testV2_combineTrip.json'
-    #df = pd.read_csv(path,low_memory=False)
     combineDataToJson(1, path, savepath,1,100)

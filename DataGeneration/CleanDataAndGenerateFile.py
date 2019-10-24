@@ -5,6 +5,7 @@ import os
 import pandas as pd
 
 
+#Clean the dataset
 def CleanDataAndSave(path, savepath):
     df = pd.read_csv(path,low_memory=False)
 
@@ -12,7 +13,7 @@ def CleanDataAndSave(path, savepath):
 
     df_clean = df[(True^df['tripID'].isin(['tripID']))]
     print(df_clean.shape)
-    df_clean.to_csv(savepath, index = None, header=True)
+    df_clean.to_csv(savepath, index=None, header=True)
 
 if __name__ == "__main__":
     path = '/home/ec2-user/telematics/testV2test.csv'
