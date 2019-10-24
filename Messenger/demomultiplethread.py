@@ -9,7 +9,7 @@ import threading
 import os
 from os import walk
 import configparser
-
+#Caculate object memory usage
 def mem_usage(pandas_obj):
     if isinstance(pandas_obj,pd.DataFrame):
         usage_b = pandas_obj.memory_usage(deep=True).sum()
@@ -18,6 +18,7 @@ def mem_usage(pandas_obj):
     usage_mb = usage_b / 1024 ** 2 # convert bytes to megabytes
     return "{:03.2f} MB".format(usage_mb)
 
+#Split Json file and push it to Kafka Message Queue
 def sendData(telematics_json_file, broker, sleeptime):
     returnValue = False
     try:
@@ -43,6 +44,7 @@ def sendData(telematics_json_file, broker, sleeptime):
 
     return returnValue
 
+#Read Config file and load the configuration
 def readConfig():
     config = configparser.ConfigParser()
     config.read('config.ini')
@@ -59,6 +61,7 @@ def orderbyNumber(x):
     x = x.replace(".json", "")
     return int(x)
 
+#If there are multiple Json files and multiple sender, it will send by order
 def sendOrder(telematics_directory, telematics_json_start, telematics_json_end, threadnumber):
     files = []
     for i in range(telematics_json_start, telematics_json_end+1):
@@ -94,6 +97,7 @@ def sendOrder(telematics_directory, telematics_json_start, telematics_json_end, 
         elif m_round > round:
             NotFinish = False
 
+#Multiple thread will parallel recieve the Json file name, load that file and send the message to Kafka Message Queue
 def receivedOrder(numberQueue,broker, sleeptime):
     while True:
         try:
@@ -113,6 +117,7 @@ if __name__ == "__main__":
     orderThreading = threading.Thread(target=sendOrder,args=(telematics_json_directory, telematics_json_start, telematics_json_end, threadnumber))
     orderThreading.start()
 
+    # Generate multiple thread as vehicle
     for i in range(0, threadnumber):
         t = threading.Thread(target=receivedOrder, args=(numberQueue,broker,sleeptime,))
         threads.append(t)
