@@ -1,6 +1,6 @@
 IMPORT Telematics;
 IMPORT Std;
-// IMPORT * FROM LanguageExtensions;
+IMPORT * FROM LanguageExtensions;
 
 #WORKUNIT('name', 'Raw Data: Clean');
 #OPTION('pickBestEngine', FALSE);
