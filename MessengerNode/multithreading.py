@@ -61,7 +61,7 @@ def main():
         inFile.close()
     producer.close()
     mainEndTime = time.time()
-    totalTime = mainStartTime - mainEndTime
+    totalTime = mainEndTime - mainStartTime
     logging.info('Total Messenger Process Took: %s',totalTime)
     
     
