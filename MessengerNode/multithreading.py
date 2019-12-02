@@ -1,7 +1,4 @@
-# sending all the samples in the samples folder
-# multi threads
-# add epoch time
-
+# sending all the samples in the samples folder via multithreading
 
 from queue import Queue
 from threading import Thread
@@ -11,7 +8,6 @@ import time
 import datetime
 import logging
 import os
-# add epoch time
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

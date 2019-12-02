@@ -4,18 +4,14 @@ IMPORT Telematics;
 // ds := DATASET(Telematics.Files.KOLN.CleanData.PATH, Telematics.Files.KOLN.CleanData.LAYOUT, THOR);
 // Expanded dataset
 ds := DATASET(Telematics.Files.KOLN.ExpandedData.PATH, Telematics.Files.KOLN.ExpandedData.Layout , THOR);
-subDS := ds[1..50];
-curDS0 := ds;
 
 // Fileter out journeys with zero or one waypoint
-count_waypoints := TABLE(curDS0, {vehicle_id, cnt := COUNT(GROUP)}, vehicle_id, MERGE);
-multiwaypoinsDS := JOIN(curDS0, count_waypoints(cnt = 1), LEFT.vehicle_id = RIGHT.vehicle_id, LOOKUP, LEFT ONLY);
+count_waypoints := TABLE(ds, {vehicle_id, cnt := COUNT(GROUP)}, vehicle_id, MERGE);
+multiwaypoinsDS := JOIN(ds, count_waypoints(cnt = 1), LEFT.vehicle_id = RIGHT.vehicle_id, LOOKUP, LEFT ONLY);
 // OUTPUT(multiwaypoinsDS);
 
-curDS := multiwaypoinsDS;
-
 // Step 1: Add Journey_ID and way_points
-locDS := GROUP(SORT(DISTRIBUTE(curDS, HASH32(vehicle_id)), vehicle_id, time_offset, LOCAL), vehicle_id, LOCAL);
+locDS := GROUP(SORT(DISTRIBUTE(multiwaypoinsDS, HASH32(vehicle_id)), vehicle_id, time_offset, LOCAL), vehicle_id, LOCAL);
 // OUTPUT(locDS);
 
 l_Journey := RECORD
