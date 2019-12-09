@@ -17,6 +17,6 @@ cleaned := Utils.clean(parsed);
 // Step 4: update the cleaned messages to superFile
 cronjob := Utils.maintenance(cleaned, Types.Topic).updateSuperFile;
 // Update superFile every second by scheduling CRON job
-empty := COUNT(raw) = 0;
+notEmpty := EXISTS(raw);
 waitjob := OUTPUT('wait...');
-IF(empty, waitjob, cronjob) : WHEN ( CRON ( '* * * * *' ) );
+IF(notEmpty, waitjob, cronjob) : WHEN ( CRON ( '* * * * *' ) );
