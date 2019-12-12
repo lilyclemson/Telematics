@@ -1,4 +1,4 @@
-IMPORT Telematics;
+IMPORT $.^.Telematics;
 
 EXPORT Types := MODULE
 

@@ -1,10 +1,78 @@
 IMPORT kafka;
 IMPORT Telematics;
-IMPORT HPCCNode.Types AS Types;
+IMPORT $.Types AS Types;
 IMPORT STD.Date;
 IMPORT STD;
 
 EXPORT Utils := MODULE
+
+// This module is an override of the built-in Kafka module that provides better performance for multi-slave
+// reads.
+SHARED MyKafkaConsumer(VARSTRING topic, VARSTRING brokers = 'localhost', VARSTRING consumerGroup = 'hpcc') := MODULE
+    SHARED localKafka := SERVICE : plugin('kafka'), namespace('KafkaPlugin')
+
+        BOOLEAN PublishMessage(CONST VARSTRING brokers, CONST VARSTRING topic, CONST VARSTRING message, CONST VARSTRING key) : cpp,action,context,entrypoint='publishMessage';
+        INTEGER4 getTopicPartitionCount(CONST VARSTRING brokers, CONST VARSTRING topic) : cpp,action,context,entrypoint='getTopicPartitionCount';
+        STREAMED DATASET(KafkaMessage) GetMessageDataset(CONST VARSTRING brokers, CONST VARSTRING topic, CONST VARSTRING consumerGroup, INTEGER4 partitionNum, INTEGER8 maxRecords) : cpp,action,context,entrypoint='getMessageDataset';
+        INTEGER8 SetMessageOffset(CONST VARSTRING brokers, CONST VARSTRING topic, CONST VARSTRING consumerGroup, INTEGER4 partitionNum, INTEGER8 newOffset) : cpp,action,context,entrypoint='setMessageOffset';
+
+    END;
+
+    /**
+     * Get the number of partitions currently set up for this topic
+     *
+     * @return  The number of partitions or zero if either the topic does not
+     *          exist or there was an error
+     */
+    EXPORT INTEGER4 GetTopicPartitionCount() := localKafka.getTopicPartitionCount(brokers, topic);
+
+    /**
+     * Consume previously-published messages from the current topic.
+     *
+     * @param   maxRecords  The maximum number of records to retrieve; pass
+     *                      zero to return as many messages as there are
+     *                      queued (dangerous); REQUIRED
+     *
+     * @return  A new dataset containing the retrieved messages
+     */
+    EXPORT DATASET(kafka.KafkaMessage) GetMessages(INTEGER8 maxRecords) := FUNCTION
+
+        numberOfPartitions := GetTopicPartitionCount();
+        maxRecordsPerNode := MAX(maxRecords DIV numberOfPartitions, 1);
+
+        // Container holding messages from all partitions; in a multi-node setup
+        // the work will be distributed among the nodes (at least up to the
+        // number of partitions); note that 'COUNTER - 1' is actually the
+        // Kafka partition number that will be read
+        partitionTracker := DATASET
+        	(
+        		numberOfPartitions,
+        		TRANSFORM
+        			(
+        				{UNSIGNED2 partitionNum},
+        				SELF.partitionNum := COUNTER -1
+        			),
+        		DISTRIBUTED
+        	);
+
+        // Map messages from multiple partitions back to final record structure
+        resultDS := NORMALIZE
+            (
+                partitionTracker,
+                localKafka.GetMessageDataset(brokers, topic, consumerGroup, LEFT.partitionNum, maxRecordsPerNode),
+                TRANSFORM
+                    (
+                        KafkaMessage,
+                        SELF := RIGHT
+                    ),
+                LOCAL
+            ) : INDEPENDENT;
+
+        RETURN resultDS;
+
+    END;
+
+END; // Local Kafka Consumer module
 
 /**
   * consumer function retrieves the messages from Kafka topic.
@@ -14,9 +82,9 @@ EXPORT Utils := MODULE
   * @return raw The raw telematics messages in JSON format.
   */
 EXPORT consumer(STRING topic, STRING brokers, UNSIGNED4 batchSize=100000) := FUNCTION
-  c:= kafka.KafkaConsumer(topic, brokers := brokers);
+  c:= MyKafkaConsumer(topic, brokers := brokers);
   batch := c.GetMessages(batchSize);
-  raw := PROJECT(DISTRIBUTE(batch), TRANSFORM(Types.KafkaMessageFormat,SELF:= LEFT));
+  raw := PROJECT(batch, TRANSFORM(Types.KafkaMessageFormat,SELF:= LEFT));
   RETURN raw;
 END;
 
@@ -41,44 +109,54 @@ END;
   */
 EXPORT clean(DATASET(Types.l_journey) ds) := FUNCTION
 // Step1: Normalize the dataset and reverse it to the original KOLN
-Types.l_norm normRaw(Types.l_journey L, Types.l_waypoints R) := TRANSFORM
+Types.l_accel normRaw(Types.l_journey L, Types.l_waypoints R) := TRANSFORM
   SELF := L;
   SELF := R;
 END;
-normDS := NORMALIZE(DISTRIBUTE(ds, HASH(vehicle_id, journey_id)), LEFT.way_points, normRaw(LEFT, RIGHT), LOCAL);
+normDS := NORMALIZE(ds, LEFT.way_points, normRaw(LEFT, RIGHT), LOCAL);
 
-// Step 2: Add useful info
-locDS := GROUP(SORT(normDS, vehicle_id, time_offset, LOCAL), vehicle_id, journey_id, LOCAL);
+accelDS := ITERATE
+    (
+        normDS,
+        TRANSFORM
+            (
+                RECORDOF(LEFT),
+                SELF.accel := IF(LEFT.vehicle_id = RIGHT.vehicle_id AND LEFT.journey_id = RIGHT.journey_id, RIGHT.speed - LEFT.speed, RIGHT.speed),
+                SELF := RIGHT
+            ),
+        LOCAL
+    );
 
-// Add accel attribute: brake (-) or acceleration (+) in meter/second
-accelDS := ITERATE(PROJECT(locDS, TRANSFORM(Types.l_accel, SELF := LEFT), LOCAL),
-                    TRANSFORM(Types.l_accel, 
-                              SELF.accel := IF(LEFT.vehicle_id <> '',RIGHT.speed -LEFT.speed, RIGHT.speed),                                                                                               
-                              SELF := RIGHT));
-// Add HB, HA, duration and other info
-Types.l_clean0 rollupStats(Types.l_accel L, DATASET(Types.l_accel) R) := TRANSFORM
-  speeding := R( speed >35.7632 ); 
-  cntSpeeding := COUNT( speeding );
-  HAs := R(accel >  3.79984);
-  HBs := R(accel < -2.90576);
-  cntHA := COUNT(HAs);
-  cntHB := COUNT(HBs);
-  maxTime := MAX(R, time_offset);
-  minTime := MIN(R, time_offset);
-  SELF.duration := maxTime - minTime + 1;
-  SELF.HA := cntHA;
-  SELF.HB := cntHB;
-  SELF.highestSpeed := MAX(R, speed);
-  SELF.speedingratio := cntSpeeding/SELF.duration;
-  SELF := L;
-END;
-clean0 := ROLLUP(accelDS, GROUP, rollupStats(LEFT, ROWS(LEFT)));
+clean0 := TABLE
+    (
+        accelDS,
+        {
+            UNSIGNED4 duration := MAX(GROUP, time_offset) - MIN(GROUP, time_offset),
+            UNSIGNED4 HB := COUNT(GROUP, accel < -2.90576),
+            UNSIGNED4 HA := COUNT(GROUP, accel > 3.79984),
+            DECIMAL9_6 highestSpeed := MAX(GROUP, speed),
+            UNSIGNED4 speed_cnt := COUNT(GROUP, speed > 35.7632),
+            REAL time_sent := MIN(GROUP, time_sent),
+            vehicle_id,
+            journey_id
+        },
+        vehicle_id, journey_id,
+        LOCAL, UNSORTED, MANY
+    );
 
-// Add messagelife for each message: the time it's sent by messenger/producer to the time it's updated to the superFile
-clean := PROJECT(clean0, TRANSFORM(Types.l_clean,
-                                    SELF.time_processed :=  Date.CurrentTimestamp()/1000000,
-                                    SELF.messagelife := SELF.time_processed - LEFT.time_sent,
-                                    SELF := LEFT));
+clean := PROJECT
+    (
+        clean0,
+        TRANSFORM
+            (
+                Types.l_clean,
+                SELF.speedingratio := LEFT.speed_cnt / LEFT.duration,
+                SELF.time_processed := Date.CurrentTimestamp() / 1000000,
+                SELF.messagelife := SELF.time_processed - LEFT.time_sent,
+                SELF := LEFT
+            )
+    );
+
 RETURN clean;
 END;
 
@@ -91,8 +169,7 @@ END;
   */
 EXPORT maintenance(DATASET(Types.l_clean) ds, STRING topic) := MODULE
   // Generate subFile:  OUTPUT the current cleaned batch messages
-  curTimestamp :=Date.CurrentTimestamp(): INDEPENDENT;
-  curTime := Date.TimestampToString(curTimestamp,'%Y-%m-%d-%H:%M:%S.%#'): INDEPENDENT;
+  curTime := Date.TimestampToString(Date.CurrentTimestamp(),'%Y-%m-%d-%H:%M:%S.%#'): INDEPENDENT;
   EXPORT subFileName := '~' + topic + '::subFile_' + curTime;
   EXPORT outSubFile := OUTPUT(ds,,subFileName, OVERWRITE, COMPRESSED);
 
@@ -105,6 +182,7 @@ EXPORT maintenance(DATASET(Types.l_clean) ds, STRING topic) := MODULE
     STD.File.StartSuperFileTransaction();
     STD.File.AddSuperFile(superFileName, subFileName);
     STD.File.FinishSuperFileTransaction();
+
   );
 END;
 

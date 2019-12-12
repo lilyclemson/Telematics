@@ -1,5 +1,5 @@
-IMPORT HPCCNode.Utils;
-IMPORT HPCCNode.Types;
+IMPORT $.Utils;
+IMPORT $.Types;
 
 
 /**

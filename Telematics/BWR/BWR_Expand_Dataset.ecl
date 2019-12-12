@@ -1,4 +1,4 @@
-IMPORT Telematics;
+IMPORT $.^ AS Telematics;
 IMPORT Std;
 IMPORT * FROM LanguageExtensions;
 

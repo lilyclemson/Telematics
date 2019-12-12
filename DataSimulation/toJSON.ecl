@@ -1,4 +1,4 @@
-IMPORT Telematics;
+IMPORT $.^.Telematics;
 
 // Original dataset
 // ds := DATASET(Telematics.Files.KOLN.CleanData.PATH, Telematics.Files.KOLN.CleanData.LAYOUT, THOR);
