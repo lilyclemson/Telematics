@@ -37,6 +37,21 @@ EXPORT Files := MODULE
 
             EXPORT FILE := DATASET(PATH, LAYOUT, FLAT);
         END;
+
+        EXPORT ExpandedData := MODULE
+
+            EXPORT LAYOUT := RECORD
+                UNSIGNED4       time_offset;    // seconds
+                STRING          vehicle_id;
+                DECIMAL11_6     x_pos;          // meters
+                DECIMAL11_6     y_pos;          // meters
+                DECIMAL9_6      speed;          // meters per second
+            END;
+
+            EXPORT PATH := KOLN_PREFIX + '::koln_expanded';
+
+            EXPORT FILE := DATASET(PATH, LAYOUT, FLAT);
+        END;
     END;
 
 END;
